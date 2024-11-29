@@ -1,4 +1,4 @@
-# Sword Battle Royale - Multiplayer Game
+# Peel Peel Battle - Multiplayer Game
 
 Um jogo multiplayer de batalha onde jogadores duelam usando projéteis em um mapa com obstáculos.
 
