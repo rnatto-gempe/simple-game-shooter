@@ -2,93 +2,67 @@
 
 Um jogo multiplayer de batalha onde jogadores duelam usando projéteis em um mapa com obstáculos.
 
-## Pré-requisitos
+## Instalação e Execução
 
-- Node.js instalado
-- Visual Studio Code
-- Extensão "Dev Tunnels" do VS Code
-
-## Configuração do Projeto
-
-1. Crie uma pasta para o projeto e adicione dois arquivos:
-   - `server.js`: código do servidor
-   - `index.html`: código do cliente
-
-2. Inicialize o projeto Node.js:
+1. Clone o repositório:
 ```bash
-npm init -y
+git clone https://github.com/seu-usuario/peel-peel-battle.git
+cd peel-peel-battle
 ```
 
-3. Instale as dependências:
+2. Instale as dependências:
 ```bash
-npm install ws
+npm install
 ```
 
-## Configurando o Dev Tunnel
+3. Inicie o servidor:
+```bash
+node server.js
+```
 
-1. Abra o VS Code
+## Configurando o Dev Tunnel no VS Code
+
+1. Abra o VS Code na pasta do projeto
 2. Clique no ícone "Remote Explorer" na barra lateral
 3. Na seção "Dev Tunnels", clique em "Create A Tunnel"
 4. Escolha um nome para seu túnel
 5. Selecione "Port" e insira 3000
 6. Escolha "Public" para visibilidade
 7. Clique em "Create"
-
-## Iniciando o Servidor
-
-1. No arquivo `index.html`, localize a linha com o WebSocket e substitua a URL pelo seu túnel:
+8. Clique com o botão direito no túnel e selecione "Start Tunnel"
+9. Copie a URL do túnel (será algo como: `https://seu-tunel.devtunnels.ms`)
+10. No arquivo `index.html`, atualize a URL do WebSocket:
 ```javascript
 const ws = new WebSocket('wss://seu-tunel.devtunnels.ms');
 ```
-
-2. Inicie o servidor:
-```bash
-node server.js
-```
-
-3. No VS Code, clique com o botão direito no túnel criado e selecione "Start Tunnel"
 
 ## Jogando
 
 1. Compartilhe o link do seu túnel com outros jogadores
 2. Cada jogador deve abrir o arquivo `index.html` em seu navegador
-3. Controles:
-   - WASD ou setas para movimento
-   - Clique do mouse para atirar
-   - Evite ser atingido por projéteis inimigos
 
-## Recursos do Jogo
-
-- Movimento em 8 direções
-- Tiro em 360 graus
-- Paredes geradas aleatoriamente
-- Sistema de colisão
-- Morte instantânea ao ser atingido
-- Reinício automático quando sobra apenas um jogador
+### Controles
+- WASD ou setas para movimento em todas as direções
+- Clique do mouse para atirar (mira em 360°)
+- Evite projéteis inimigos e use as paredes como cobertura
 
 ## Troubleshooting
 
-- Se o jogo não conectar:
-  - Verifique se o servidor está rodando
-  - Confirme se o túnel está ativo
-  - Verifique se a URL do WebSocket está correta
-  
-- Se houver lag:
-  - Tente reiniciar o túnel
-  - Verifique sua conexão com a internet
-  - Tente usar um túnel em uma região mais próxima
+Se o jogo não conectar:
+- Verifique se o servidor está rodando (`node server.js`)
+- Confirme se o túnel está ativo no VS Code
+- Verifique se a URL do WebSocket está correta no `index.html`
 
-## Notas Importantes
+## Notas
 
 - O túnel do VS Code tem limites de banda e conexões
-- Para uso prolongado ou produção, considere um servidor dedicado
-- O jogo não salva estado entre sessões
-- Todos os jogadores precisam ter uma boa conexão para melhor experiência
+- Para melhor experiência, todos os jogadores devem ter uma conexão estável
+- O último jogador vivo vence a rodada
+- O jogo reinicia automaticamente quando sobra apenas um jogador
 
-## Desenvolvido com
+## Tecnologias
 
 - Node.js
 - WebSocket (ws)
 - HTML5
 - JavaScript
-- VS Code Dev Tunnels
