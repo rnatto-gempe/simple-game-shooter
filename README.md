@@ -2,6 +2,7 @@
 
 Um jogo multiplayer de batalha onde jogadores duelam usando projéteis em um mapa com obstáculos.
 
+![Gameplay GIF](1129.gif)
 ## Instalação e Execução
 
 1. Clone o repositório:
