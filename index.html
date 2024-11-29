@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sword Battle Royale</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #333;
+            font-family: Arial, sans-serif;
+        }
+        #game {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            margin: 20px auto;
+            background: #4a4a4a;
+            border: 4px solid #232;
+        }
+        .player {
+            position: absolute;
+            width: 32px;
+            height: 32px;
+            transform: translate3d(0, 0, 0);
+            will-change: transform;
+            border-radius: 4px;
+        }
+        .sword {
+            position: absolute;
+            background: #fff;
+            pointer-events: none;
+            box-shadow: 0 0 10px #fff;
+            opacity: 0;
+            transition: opacity 0.1s;
+        }
+        .sword.active {
+            opacity: 1;
+        }
+        #status {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 18px;
+        }
+        .dead {
+            opacity: 0;
+            transform: scale(0) rotate(180deg);
+            transition: all 0.3s;
+        }
+        #message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 24px;
+            text-align: center;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="game">
+        <div id="status">Players alive: <span id="playersAlive">0</span></div>
+        <div id="message"></div>
+    </div>
+
+    <script>
+        class Player {
+            constructor(data) {
+                this.id = data.id;
+                this.x = data.x;
+                this.y = data.y;
+                this.isAlive = data.isAlive;
+                this.color = data.color;
+                
+                // Criar elemento do jogador
+                this.element = document.createElement('div');
+                this.element.className = 'player';
+                this.element.style.backgroundColor = this.color;
+                
+                // Criar elemento da espada
+                this.sword = document.createElement('div');
+                this.sword.className = 'sword';
+                
+                // Adicionar elementos ao jogo
+                game.appendChild(this.element);
+                this.element.appendChild(this.sword);
+                
+                this.updatePosition();
+            }
+            
+            updatePosition() {
+                this.element.style.transform = `translate3d(${this.x}px, ${this.y}px, 0)`;
+            }
+            
+            attack(direction) {
+                const config = {
+                    right: { w: 32, h: 8, x: 32, y: 12 },
+                    left: { w: 32, h: 8, x: -32, y: 12 },
+                    down: { w: 8, h: 32, x: 12, y: 32 },
+                    up: { w: 8, h: 32, x: 12, y: -32 }
+                }[direction];
+                
+                Object.assign(this.sword.style, {
+                    width: config.w + 'px',
+                    height: config.h + 'px',
+                    left: config.x + 'px',
+                    top: config.y + 'px'
+                });
+                
+                this.sword.classList.add('active');
+                setTimeout(() => this.sword.classList.remove('active'), 200);
+            }
+            
+            die() {
+                this.isAlive = false;
+                this.element.classList.add('dead');
+            }
+            
+            reset(x, y) {
+                this.isAlive = true;
+                this.x = x;
+                this.y = y;
+                this.element.classList.remove('dead');
+                this.updatePosition();
+            }
+            
+            destroy() {
+                this.element.remove();
+            }
+        }
+        
+        const game = document.getElementById('game');
+        const playersAliveElement = document.getElementById('playersAlive');
+        const messageElement = document.getElementById('message');
+        
+        let myId = null;
+        let players = new Map();
+        let keys = {};
+        let lastAttackTime = 0;
+        
+        const ws = new WebSocket('wss://07xqvspn-3000.brs.devtunnels.ms');
+        
+        function showMessage(text, duration = 2000) {
+            messageElement.textContent = text;
+            messageElement.style.display = 'block';
+            if (duration) {
+                setTimeout(() => messageElement.style.display = 'none', duration);
+            }
+        }
+        
+        function updatePlayersAlive() {
+            const alive = Array.from(players.values()).filter(p => p.isAlive).length;
+            playersAliveElement.textContent = alive;
+        }
+        
+        function checkCollision(attacker, target) {
+            const attackerRect = attacker.sword.getBoundingClientRect();
+            const targetRect = target.element.getBoundingClientRect();
+            
+            return !(attackerRect.right < targetRect.left || 
+                    attackerRect.left > targetRect.right || 
+                    attackerRect.bottom < targetRect.top || 
+                    attackerRect.top > targetRect.bottom);
+        }
+        
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            
+            switch(data.type) {
+                case 'init':
+                    myId = data.id;
+                    data.players.forEach(playerData => {
+                        players.set(playerData.id, new Player(playerData));
+                    });
+                    updatePlayersAlive();
+                    break;
+                    
+                case 'playerJoined':
+                    data.players.forEach(playerData => {
+                        if (!players.has(playerData.id)) {
+                            players.set(playerData.id, new Player(playerData));
+                        }
+                    });
+                    updatePlayersAlive();
+                    break;
+                    
+                case 'positions':
+                    data.players.forEach(playerData => {
+                        const player = players.get(playerData.id);
+                        if (player && player.id !== myId && player.isAlive) {
+                            player.x = playerData.x;
+                            player.y = playerData.y;
+                            player.updatePosition();
+                        }
+                    });
+                    break;
+                    
+                case 'swordAttack':
+                    const attacker = players.get(data.attackerId);
+                    if (attacker) {
+                        attacker.attack(data.direction);
+                        
+                        if (data.attackerId !== myId) {
+                            const me = players.get(myId);
+                            if (me && me.isAlive && checkCollision(attacker, me)) {
+                                ws.send(JSON.stringify({
+                                    type: 'hit',
+                                    attackerId: data.attackerId,
+                                    targetId: myId
+                                }));
+                            }
+                        }
+                    }
+                    break;
+                    
+                case 'playerKilled':
+                    const killedPlayer = players.get(data.targetId);
+                    if (killedPlayer) {
+                        killedPlayer.die();
+                        if (data.targetId === myId) {
+                            showMessage('You died!');
+                        }
+                        updatePlayersAlive();
+                    }
+                    break;
+                    
+                case 'gameOver':
+                    const winner = players.get(data.winner);
+                    if (winner) {
+                        showMessage(winner.id === myId ? 'Victory!' : `${winner.color} won!`, 3000);
+                    }
+                    break;
+                    
+                case 'gameReset':
+                    data.players.forEach(playerData => {
+                        const player = players.get(playerData.id);
+                        if (player) {
+                            player.reset(playerData.x, playerData.y);
+                        }
+                    });
+                    updatePlayersAlive();
+                    showMessage('New round starting!', 2000);
+                    break;
+                    
+                case 'playerLeft':
+                    const player = players.get(data.id);
+                    if (player) {
+                        player.destroy();
+                        players.delete(data.id);
+                    }
+                    updatePlayersAlive();
+                    break;
+            }
+        };
+
+        document.addEventListener('keydown', e => keys[e.key] = true);
+        document.addEventListener('keyup', e => keys[e.key] = false);
+        
+        game.addEventListener('click', (e) => {
+            const me = players.get(myId);
+            if (!me || !me.isAlive) return;
+            
+            const now = Date.now();
+            if (now - lastAttackTime < 200) return;
+            
+            const rect = game.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+            
+            const dx = clickX - (me.x + 16);
+            const dy = clickY - (me.y + 16);
+            
+            let direction;
+            if (Math.abs(dx) > Math.abs(dy)) {
+                direction = dx > 0 ? 'right' : 'left';
+            } else {
+                direction = dy > 0 ? 'down' : 'up';
+            }
+            
+            lastAttackTime = now;
+            
+            ws.send(JSON.stringify({
+                type: 'attack',
+                id: myId,
+                direction
+            }));
+        });
+
+        function gameLoop() {
+            const me = players.get(myId);
+            if (!me || !me.isAlive) {
+                requestAnimationFrame(gameLoop);
+                return;
+            }
+            
+            let moved = false;
+            const speed = 15;
+            
+            if (keys['ArrowUp'] || keys['w']) { me.y = Math.max(0, me.y - speed); moved = true; }
+            if (keys['ArrowDown'] || keys['s']) { me.y = Math.min(game.offsetHeight - 32, me.y + speed); moved = true; }
+            if (keys['ArrowLeft'] || keys['a']) { me.x = Math.max(0, me.x - speed); moved = true; }
+            if (keys['ArrowRight'] || keys['d']) { me.x = Math.min(game.offsetWidth - 32, me.x + speed); moved = true; }
+            
+            if (moved) {
+                me.updatePosition();
+                ws.send(JSON.stringify({
+                    type: 'movement',
+                    id: myId,
+                    x: me.x,
+                    y: me.y
+                }));
+            }
+            
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+    </script>
+</body>
+</html>
