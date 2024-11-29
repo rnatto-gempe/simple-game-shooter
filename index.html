@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>Sword Battle Royale</title>
     <style>
@@ -9,6 +10,7 @@
             background: #333;
             font-family: Arial, sans-serif;
         }
+
         #game {
             position: relative;
             width: 800px;
@@ -17,6 +19,7 @@
             background: #4a4a4a;
             border: 4px solid #232;
         }
+
         .player {
             position: absolute;
             width: 32px;
@@ -24,18 +27,24 @@
             transform: translate3d(0, 0, 0);
             will-change: transform;
             border-radius: 4px;
+            transition: all 0.1s linear;
         }
-        .sword {
+
+        .player.dashing {
+            box-shadow: 0 0 10px #fff;
+        }
+
+        .sword-projectile {
             position: absolute;
+            width: 20px;
+            height: 6px;
             background: #fff;
             pointer-events: none;
-            box-shadow: 0 0 10px #fff;
-            opacity: 0;
-            transition: opacity 0.1s;
+            box-shadow: 0 0 10px #fff, 0 0 20px #fff;
+            transform-origin: center;
+            will-change: transform;
         }
-        .sword.active {
-            opacity: 1;
-        }
+
         #status {
             position: absolute;
             top: 10px;
@@ -43,11 +52,21 @@
             color: white;
             font-size: 18px;
         }
+
+        #dash-cooldown {
+            position: absolute;
+            top: 40px;
+            left: 10px;
+            color: white;
+            font-size: 18px;
+        }
+
         .dead {
             opacity: 0;
             transform: scale(0) rotate(180deg);
             transition: all 0.3s;
         }
+
         #message {
             position: absolute;
             top: 50%;
@@ -60,13 +79,121 @@
         }
     </style>
 </head>
+
 <body>
     <div id="game">
         <div id="status">Players alive: <span id="playersAlive">0</span></div>
+        <div id="dash-cooldown">Dash: Ready</div>
         <div id="message"></div>
     </div>
 
     <script>
+        const game = document.getElementById('game');
+        const playersAliveElement = document.getElementById('playersAlive');
+        const messageElement = document.getElementById('message');
+        const dashCooldownElement = document.getElementById('dash-cooldown');
+
+        const GAME_CONFIG = {
+            PROJECTILE_SPEED: 60,
+            PROJECTILE_LIFETIME: 2000,
+            ATTACK_COOLDOWN: 0,
+            DASH_SPEED: 120,
+            DASH_DURATION: 25,
+            DASH_COOLDOWN: 1000
+        };
+
+        class Projectile {
+            constructor(x, y, direction, speed, attackerId) {
+                this.x = x;
+                this.y = y;
+                this.direction = direction;
+                this.speed = speed;
+                this.attackerId = attackerId;
+                this.active = true;
+                this.createdAt = Date.now();
+
+                this.element = document.createElement('div');
+                this.element.className = 'sword-projectile';
+
+                let rotation = 0;
+                switch (direction) {
+                    case 'right': rotation = 0; break;
+                    case 'left': rotation = 180; break;
+                    case 'down': rotation = 90; break;
+                    case 'up': rotation = 270; break;
+                }
+
+                this.element.style.transform = `translate(${x}px, ${y}px) rotate(${rotation}deg)`;
+                game.appendChild(this.element);
+            }
+
+            update () {
+                if (!this.active) return false;
+
+                // Verifica tempo de vida
+                if (Date.now() - this.createdAt > GAME_CONFIG.PROJECTILE_LIFETIME) {
+                    this.destroy();
+                    return false;
+                }
+
+                switch (this.direction) {
+                    case 'right': this.x += this.speed; break;
+                    case 'left': this.x -= this.speed; break;
+                    case 'down': this.y += this.speed; break;
+                    case 'up': this.y -= this.speed; break;
+                }
+
+                // Verifica limites da tela
+                if (this.x < -20 || this.x > game.offsetWidth + 20 ||
+                    this.y < -20 || this.y > game.offsetHeight + 20) {
+                    this.destroy();
+                    return false;
+                }
+
+                this.element.style.transform =
+                    `translate(${this.x}px, ${this.y}px) rotate(${this.getRotation()}deg)`;
+
+                // Verifica colisão
+                players.forEach(player => {
+                    if (player.id !== this.attackerId && player.isAlive && this.checkCollision(player)) {
+                        ws.send(JSON.stringify({
+                            type: 'hit',
+                            attackerId: this.attackerId,
+                            targetId: player.id
+                        }));
+                        this.destroy();
+                    }
+                });
+
+                return true;
+            }
+
+            getRotation () {
+                switch (this.direction) {
+                    case 'right': return 0;
+                    case 'left': return 180;
+                    case 'down': return 90;
+                    case 'up': return 270;
+                    default: return 0;
+                }
+            }
+
+            checkCollision (player) {
+                const projectileRect = this.element.getBoundingClientRect();
+                const playerRect = player.element.getBoundingClientRect();
+
+                return !(projectileRect.right < playerRect.left ||
+                    projectileRect.left > playerRect.right ||
+                    projectileRect.bottom < playerRect.top ||
+                    projectileRect.top > playerRect.bottom);
+            }
+
+            destroy () {
+                this.active = false;
+                this.element.remove();
+            }
+        }
+
         class Player {
             constructor(data) {
                 this.id = data.id;
@@ -74,102 +201,95 @@
                 this.y = data.y;
                 this.isAlive = data.isAlive;
                 this.color = data.color;
-                
-                // Criar elemento do jogador
+                this.isDashing = false;
+                this.lastDashTime = 0;
+                this.dashDirection = { x: 0, y: 0 };
+
                 this.element = document.createElement('div');
                 this.element.className = 'player';
                 this.element.style.backgroundColor = this.color;
-                
-                // Criar elemento da espada
-                this.sword = document.createElement('div');
-                this.sword.className = 'sword';
-                
-                // Adicionar elementos ao jogo
                 game.appendChild(this.element);
-                this.element.appendChild(this.sword);
-                
+
                 this.updatePosition();
             }
-            
-            updatePosition() {
+
+            updatePosition () {
                 this.element.style.transform = `translate3d(${this.x}px, ${this.y}px, 0)`;
             }
-            
-            attack(direction) {
-                const config = {
-                    right: { w: 32, h: 8, x: 32, y: 12 },
-                    left: { w: 32, h: 8, x: -32, y: 12 },
-                    down: { w: 8, h: 32, x: 12, y: 32 },
-                    up: { w: 8, h: 32, x: 12, y: -32 }
-                }[direction];
-                
-                Object.assign(this.sword.style, {
-                    width: config.w + 'px',
-                    height: config.h + 'px',
-                    left: config.x + 'px',
-                    top: config.y + 'px'
-                });
-                
-                this.sword.classList.add('active');
-                setTimeout(() => this.sword.classList.remove('active'), 200);
+
+            startDash (dirX, dirY) {
+                if (Date.now() - this.lastDashTime < GAME_CONFIG.DASH_COOLDOWN) return false;
+
+                this.isDashing = true;
+                this.lastDashTime = Date.now();
+                this.dashDirection = { x: dirX, y: dirY };
+                this.element.classList.add('dashing');
+
+                setTimeout(() => {
+                    this.isDashing = false;
+                    this.element.classList.remove('dashing');
+                }, GAME_CONFIG.DASH_DURATION);
+
+                return true;
             }
-            
-            die() {
+
+            updateDash () {
+                if (!this.isDashing) return;
+
+                const dashSpeed = GAME_CONFIG.DASH_SPEED;
+                const newX = this.x + (this.dashDirection.x * dashSpeed);
+                const newY = this.y + (this.dashDirection.y * dashSpeed);
+
+                this.x = Math.max(0, Math.min(game.offsetWidth - 32, newX));
+                this.y = Math.max(0, Math.min(game.offsetHeight - 32, newY));
+                this.updatePosition();
+            }
+
+            die () {
                 this.isAlive = false;
                 this.element.classList.add('dead');
             }
-            
-            reset(x, y) {
+
+            reset (x, y) {
                 this.isAlive = true;
                 this.x = x;
                 this.y = y;
-                this.element.classList.remove('dead');
+                this.isDashing = false;
+                this.element.classList.remove('dead', 'dashing');
                 this.updatePosition();
             }
-            
-            destroy() {
+
+            destroy () {
                 this.element.remove();
             }
         }
-        
-        const game = document.getElementById('game');
-        const playersAliveElement = document.getElementById('playersAlive');
-        const messageElement = document.getElementById('message');
-        
+
         let myId = null;
         let players = new Map();
+        let projectiles = [];
         let keys = {};
         let lastAttackTime = 0;
-        
+
         const ws = new WebSocket('wss://07xqvspn-3000.brs.devtunnels.ms');
-        
-        function showMessage(text, duration = 2000) {
+
+
+        function showMessage (text, duration = 2000) {
             messageElement.textContent = text;
             messageElement.style.display = 'block';
             if (duration) {
                 setTimeout(() => messageElement.style.display = 'none', duration);
             }
         }
-        
-        function updatePlayersAlive() {
+
+        function updatePlayersAlive () {
             const alive = Array.from(players.values()).filter(p => p.isAlive).length;
             playersAliveElement.textContent = alive;
         }
-        
-        function checkCollision(attacker, target) {
-            const attackerRect = attacker.sword.getBoundingClientRect();
-            const targetRect = target.element.getBoundingClientRect();
-            
-            return !(attackerRect.right < targetRect.left || 
-                    attackerRect.left > targetRect.right || 
-                    attackerRect.bottom < targetRect.top || 
-                    attackerRect.top > targetRect.bottom);
-        }
-        
+
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
-            
-            switch(data.type) {
+
+            switch (data.type) {
                 case 'init':
                     myId = data.id;
                     data.players.forEach(playerData => {
@@ -177,7 +297,7 @@
                     });
                     updatePlayersAlive();
                     break;
-                    
+
                 case 'playerJoined':
                     data.players.forEach(playerData => {
                         if (!players.has(playerData.id)) {
@@ -186,7 +306,7 @@
                     });
                     updatePlayersAlive();
                     break;
-                    
+
                 case 'positions':
                     data.players.forEach(playerData => {
                         const player = players.get(playerData.id);
@@ -197,25 +317,20 @@
                         }
                     });
                     break;
-                    
+
                 case 'swordAttack':
                     const attacker = players.get(data.attackerId);
                     if (attacker) {
-                        attacker.attack(data.direction);
-                        
-                        if (data.attackerId !== myId) {
-                            const me = players.get(myId);
-                            if (me && me.isAlive && checkCollision(attacker, me)) {
-                                ws.send(JSON.stringify({
-                                    type: 'hit',
-                                    attackerId: data.attackerId,
-                                    targetId: myId
-                                }));
-                            }
-                        }
+                        projectiles.push(new Projectile(
+                            attacker.x + 16,
+                            attacker.y + 16,
+                            data.direction,
+                            GAME_CONFIG.PROJECTILE_SPEED,
+                            data.attackerId
+                        ));
                     }
                     break;
-                    
+
                 case 'playerKilled':
                     const killedPlayer = players.get(data.targetId);
                     if (killedPlayer) {
@@ -226,14 +341,14 @@
                         updatePlayersAlive();
                     }
                     break;
-                    
+
                 case 'gameOver':
                     const winner = players.get(data.winner);
                     if (winner) {
                         showMessage(winner.id === myId ? 'Victory!' : `${winner.color} won!`, 3000);
                     }
                     break;
-                    
+
                 case 'gameReset':
                     data.players.forEach(playerData => {
                         const player = players.get(playerData.id);
@@ -244,7 +359,7 @@
                     updatePlayersAlive();
                     showMessage('New round starting!', 2000);
                     break;
-                    
+
                 case 'playerLeft':
                     const player = players.get(data.id);
                     if (player) {
@@ -256,32 +371,29 @@
             }
         };
 
-        document.addEventListener('keydown', e => keys[e.key] = true);
-        document.addEventListener('keyup', e => keys[e.key] = false);
-        
         game.addEventListener('click', (e) => {
             const me = players.get(myId);
             if (!me || !me.isAlive) return;
-            
+
             const now = Date.now();
-            if (now - lastAttackTime < 200) return;
-            
+            if (now - lastAttackTime < GAME_CONFIG.ATTACK_COOLDOWN) return;
+
             const rect = game.getBoundingClientRect();
             const clickX = e.clientX - rect.left;
             const clickY = e.clientY - rect.top;
-            
+
             const dx = clickX - (me.x + 16);
             const dy = clickY - (me.y + 16);
-            
+
             let direction;
             if (Math.abs(dx) > Math.abs(dy)) {
                 direction = dx > 0 ? 'right' : 'left';
             } else {
                 direction = dy > 0 ? 'down' : 'up';
             }
-            
+
             lastAttackTime = now;
-            
+
             ws.send(JSON.stringify({
                 type: 'attack',
                 id: myId,
@@ -289,21 +401,78 @@
             }));
         });
 
-        function gameLoop() {
+        document.addEventListener('keydown', e => {
+            keys[e.key] = true;
+
+            if (e.code === 'Space') {
+                const me = players.get(myId);
+                if (!me || !me.isAlive) return;
+
+                let dirX = 0, dirY = 0;
+
+                if (keys['ArrowUp'] || keys['w']) dirY = -1;
+                if (keys['ArrowDown'] || keys['s']) dirY = 1;
+                if (keys['ArrowLeft'] || keys['a']) dirX = -1;
+                if (keys['ArrowRight'] || keys['d']) dirX = 1;
+
+                // If no direction is pressed, dash in the last moved direction or forward
+                if (dirX === 0 && dirY === 0) dirX = 1;
+
+                // Normalize diagonal movement
+                if (dirX !== 0 && dirY !== 0) {
+                    const length = Math.sqrt(dirX * dirX + dirY * dirY);
+                    dirX /= length;
+                    dirY /= length;
+                }
+
+                if (me.startDash(dirX, dirY)) {
+                    ws.send(JSON.stringify({
+                        type: 'movement',
+                        id: myId,
+                        x: me.x,
+                        y: me.y
+                    }));
+                }
+            }
+        });
+
+        document.addEventListener('keyup', e => keys[e.key] = false);
+
+        function updateDashCooldown () {
+            const me = players.get(myId);
+            if (!me) return;
+
+            const now = Date.now();
+            const timeSinceLastDash = now - me.lastDashTime;
+
+            if (timeSinceLastDash < GAME_CONFIG.DASH_COOLDOWN) {
+                const remainingCooldown = Math.ceil((GAME_CONFIG.DASH_COOLDOWN - timeSinceLastDash) / 1000);
+                dashCooldownElement.textContent = `Dash: ${remainingCooldown}s`;
+            } else {
+                dashCooldownElement.textContent = 'Dash: Ready';
+            }
+        }
+
+        function gameLoop () {
             const me = players.get(myId);
             if (!me || !me.isAlive) {
                 requestAnimationFrame(gameLoop);
                 return;
             }
-            
+
             let moved = false;
-            const speed = 15;
-            
-            if (keys['ArrowUp'] || keys['w']) { me.y = Math.max(0, me.y - speed); moved = true; }
-            if (keys['ArrowDown'] || keys['s']) { me.y = Math.min(game.offsetHeight - 32, me.y + speed); moved = true; }
-            if (keys['ArrowLeft'] || keys['a']) { me.x = Math.max(0, me.x - speed); moved = true; }
-            if (keys['ArrowRight'] || keys['d']) { me.x = Math.min(game.offsetWidth - 32, me.x + speed); moved = true; }
-            
+            const speed = 10;
+
+            if (!me.isDashing) {
+                if (keys['ArrowUp'] || keys['w']) { me.y = Math.max(0, me.y - speed); moved = true; }
+                if (keys['ArrowDown'] || keys['s']) { me.y = Math.min(game.offsetHeight - 32, me.y + speed); moved = true; }
+                if (keys['ArrowLeft'] || keys['a']) { me.x = Math.max(0, me.x - speed); moved = true; }
+                if (keys['ArrowRight'] || keys['d']) { me.x = Math.min(game.offsetWidth - 32, me.x + speed); moved = true; }
+            } else {
+                me.updateDash();
+                moved = true;
+            }
+
             if (moved) {
                 me.updatePosition();
                 ws.send(JSON.stringify({
@@ -313,11 +482,16 @@
                     y: me.y
                 }));
             }
-            
+
+            updateDashCooldown();
+            projectiles = projectiles.filter(projectile => projectile.update());
+
             requestAnimationFrame(gameLoop);
         }
+
 
         gameLoop();
     </script>
 </body>
+
 </html>
